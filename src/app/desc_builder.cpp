@@ -140,7 +140,7 @@ vector<segment_desc_t> build_desc(const string& trajectory_path)
             throw std::runtime_error("No atoms in trajectory file - " + trajectory_path);
         }
         if (topo.bonds().empty()) {
-            throw std::runtime_error("No bonds in topology – " + trajectory_path +
+            throw std::runtime_error("No bonds in topology ï¿½ " + trajectory_path +
                 " is probably not a topology file (TPR/PSF/etc.)");
         }
 
@@ -283,5 +283,17 @@ vector<segment_desc_t> build_desc(const string& trajectory_path)
     }
     catch (const chemfiles::Error& e) {
         throw std::runtime_error(std::string("Chemfiles error: ") + e.what());
+    }
+}
+
+std::optional<size_t> probe_trajectory_n_atoms(const string& trajectory_path)
+{
+    try {
+        chemfiles::Trajectory traj(trajectory_path);
+        auto frame = traj.read();
+        return frame.size();
+    }
+    catch (...) {
+        return std::nullopt;
     }
 }

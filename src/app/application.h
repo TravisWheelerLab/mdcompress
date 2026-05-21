@@ -21,6 +21,13 @@ class CApplication
 
 	bool load_desc_from_trajectory_file();
 
+	// Sanity-check the description against the actual trajectory atom count.
+	// May enable params.only_mol (with a loud warning). Returns false (with
+	// guidance) if the description cannot be reconciled with the trajectory.
+	bool validate_segment_desc_against_trajectory();
+	void report_desc_mismatch(uint64_t n_traj, uint64_t total_all, uint64_t total_mol) const;
+	bool write_candidate_desc(const std::string& path, const std::vector<segment_desc_t>& desc) const;
+
 	void reduce_segment_desc_to_molecules_only();
 
 	void expand_segments();

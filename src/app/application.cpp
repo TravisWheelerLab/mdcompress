@@ -390,6 +390,126 @@ const char* CApplication::segment_type_t_to_str(const segment_type_t type) const
 }
 
 // *******************************************************************************
+bool CApplication::write_candidate_desc(const std::string& path, const std::vector<segment_desc_t>& desc) const
+{
+    std::ofstream out(path, std::ios::binary);
+    if (!out)
+        return false;
+    for (const auto& sd : desc)
+        out << segment_type_t_to_str(sd.type) << "\t" << sd.name << "\t" << sd.size << "\n";
+    return out.good();
+}
+
+// *******************************************************************************
+void CApplication::report_desc_mismatch(uint64_t n_traj, uint64_t total_all, uint64_t total_mol) const
+{
+    std::cerr << "  Atoms in trajectory:           " << n_traj << "\n";
+    std::cerr << "  Atoms in description (all):    " << total_all << "\n";
+    std::cerr << "  Atoms in description (mol only): " << total_mol << "\n";
+    std::cerr << "  Segments:\n";
+    for (const auto& sd : segment_desc)
+        std::cerr << "    " << segment_type_t_to_str(sd.type) << "\t" << sd.name << "\t" << sd.size << "\n";
+}
+
+// *******************************************************************************
+// Sanity-checks the (inferred or loaded) description against the actual trajectory.
+// Returns false (with guidance) if the description cannot be reconciled with the
+// trajectory. May enable params.only_mol (with a loud warning) when only the
+// molecule segments match the trajectory's atom count.
+bool CApplication::validate_segment_desc_against_trajectory()
+{
+    auto probe = probe_trajectory_n_atoms(params.input_fn);
+    if (!probe)
+    {
+        // Could not read the trajectory here; don't block - the reader's own
+        // open() still verifies the atom count before compressing.
+        std::cerr << "Warning: could not read atom count from '" << params.input_fn
+                  << "' to validate the description; relying on the reader's own check.\n";
+        return true;
+    }
+
+    const uint64_t n_traj = *probe;
+
+    uint64_t total_all = 0;
+    uint64_t total_mol = 0;
+    for (const auto& sd : segment_desc)
+    {
+        total_all += sd.size;
+        if (sd.type == segment_type_t::molecule)
+            total_mol += sd.size;
+    }
+
+    auto describe_source = [this]() -> std::string {
+        if (!params.description_fn.empty())
+            return "description file '" + params.description_fn + "'";
+        return "topology file '" + params.topology_fn + "'";
+    };
+
+    // The user explicitly asked for molecules only.
+    if (params.only_mol)
+    {
+        if (total_mol == n_traj)
+            return true;
+
+        std::cerr << "Error: --only-mol was requested, but the molecule atoms described by the "
+                  << describe_source() << " (" << total_mol
+                  << ") do not match the number of atoms in the trajectory '"
+                  << params.input_fn << "' (" << n_traj << ").\n";
+        report_desc_mismatch(n_traj, total_all, total_mol);
+        return false;
+    }
+
+    // The whole description matches the trajectory - use it as-is.
+    if (total_all == n_traj)
+        return true;
+
+    // Only the molecules match: topology likely includes solvent/ions that the
+    // trajectory does not. Auto-enable only-mol, but make it very visible.
+    if (total_mol == n_traj && total_mol != 0)
+    {
+        std::cerr << "\n";
+        std::cerr << "**********************************************************************\n";
+        std::cerr << "* WARNING: description / trajectory atom-count mismatch\n";
+        std::cerr << "*   The " << describe_source() << " describes " << total_all << " atoms,\n";
+        std::cerr << "*   but the trajectory '" << params.input_fn << "' contains " << n_traj << " atoms.\n";
+        std::cerr << "*   The molecule atoms alone (" << total_mol << ") DO match the trajectory.\n";
+        std::cerr << "*   --> Automatically enabling --only-mol: compressing ONLY molecule\n";
+        std::cerr << "*       segments and EXCLUDING water/ions/other from the topology.\n";
+        std::cerr << "*   If that is not what you want, pass an explicit description with -d.\n";
+        std::cerr << "**********************************************************************\n\n";
+        params.only_mol = true;
+        return true;
+    }
+
+    // Nothing reconciles - fail with actionable guidance and a candidate desc.
+    std::cerr << "Error: the description could not be reconciled with the trajectory.\n";
+    report_desc_mismatch(n_traj, total_all, total_mol);
+
+    // Only the topology-inferred description is worth dumping for the user to
+    // edit; an explicit -d file already exists on disk for them to fix.
+    if (params.description_fn.empty())
+    {
+        const std::string candidate_path = params.output_fn + ".candidate.desc";
+        if (write_candidate_desc(candidate_path, segment_desc))
+        {
+            std::cerr << "A best-effort candidate description (inferred from the topology) was written to:\n    " << candidate_path << "\n";
+            std::cerr << "Edit it as needed (segment types: MOL / WAT / OTHER / NONE), then re-run with:\n";
+            std::cerr << "    -d " << candidate_path << "\n";
+        }
+        else
+        {
+            std::cerr << "(could not write a candidate description file next to the output)\n";
+        }
+    }
+    else
+    {
+        std::cerr << "Adjust the description file '" << params.description_fn << "' so the atom counts match the trajectory.\n";
+    }
+    std::cerr << "You can also build a description from a topology with `mdcompress make_desc`.\n";
+    return false;
+}
+
+// *******************************************************************************
 bool CApplication::compress()
 {
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -407,7 +527,8 @@ bool CApplication::compress()
         case traj_file_format_t::xtc:
             input_reader = std::make_unique<CXTCReader>(params.resolution_set_by_user ? params.resolution() : 0); break;
         default:
-            return false;
+            // No native (xdrfile) reader for this format (e.g. DCD); fall back to chemfiles
+            input_reader = std::make_unique<CTrajReader>(params.resolution_set_by_user ? params.resolution() : 0); break;
         }
     }
     else
@@ -442,6 +563,12 @@ bool CApplication::compress()
         if (!load_desc_from_trajectory_file())
             return false;
     }
+
+    // Check the description makes sense for this trajectory before we commit to it.
+    // May auto-enable params.only_mol (with a loud warning).
+    if (!validate_segment_desc_against_trajectory())
+        return false;
+
     if (params.only_mol) //reduce segment description to only point to molecules
         reduce_segment_desc_to_molecules_only();
 
@@ -924,7 +1051,8 @@ bool CApplication::select() const
         case traj_file_format_t::xtc:
             output_writer = std::make_unique<CXTCWriter>(); break;
         default:
-            return false;
+            // No native (xdrfile) writer for this format (e.g. DCD); fall back to chemfiles
+            output_writer = std::make_unique<CTrajWriter>(); break;
         }
     }
     else
@@ -1198,7 +1326,8 @@ bool CApplication::to_fp32()
         case traj_file_format_t::xtc:
             input_reader = std::make_unique<CXTCReader>(params.resolution_set_by_user ? params.resolution() : 0); break;
         default:
-            return false;
+            // No native (xdrfile) reader for this format (e.g. DCD); fall back to chemfiles
+            input_reader = std::make_unique<CTrajReader>(params.resolution_set_by_user ? params.resolution() : 0); break;
         }
     }
     else

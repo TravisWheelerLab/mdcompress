@@ -1,6 +1,6 @@
 MDCompress
 =
-MDCompress is a compressor of Molecular Dynamics files stored in the XTC and other formats. MDCompress uses [chemfiles](https://github.com/chemfiles/chemfiles) for reading during compression and for writing during decompression, so each format that is supported by chemfiles is also supported by MDCompress.
+MDCompress is a compressor of Molecular Dynamics files stored in the XTC and other formats (XTC, TRR, DCD, ...). MDCompress uses [chemfiles](https://github.com/chemfiles/chemfiles) for reading during compression and for writing during decompression, so each format that is supported by chemfiles is also supported by MDCompress.
 
 ## Quick start
 To compile mdcompress g++ compiler (at least g++-12 is required) for both Linux and mac os (for mac os we advise to use g++ installed with [homebrew](https://brew.sh/).
@@ -52,18 +52,19 @@ sudo apt install make cmake build-essential python3 python3-dev rustc cargo git
 `mdcompress <mode> [options]`
 
 Modes:
-* `compress`         &ndash; compress XTC/TRR/...  file into MDC format
-* `decompress`       &ndash; decompress MDC file into XTC/TRR/... format
-* `select`           &ndash; decompress some frames from MDC file into XTC/TRR/... format
+* `compress`         &ndash; compress a trajectory (XTC/TRR/DCD/... any chemfiles-supported format) into MDC format
+* `decompress`       &ndash; decompress MDC file into a trajectory (XTC/TRR/DCD/...)
+* `select`           &ndash; decompress some frames from MDC file into a trajectory (XTC/TRR/DCD/...)
 * `info`             &ndash; info about contents of MDC file
-* `make_desc`        &ndash; create description file (for -d) from TPR (and possibly other)
+* `make_desc`        &ndash; create description file (for -d) from a topology (TPR/PSF/PDB/...)
 
 Options - compress mode:
-* `-i <file_name>`               &ndash; input file name
-* `-o <file_name>`               &ndash; output file name
-* `-d <file_name>`               &ndash; file name of description of components of frame (may be omited if --topology provided -> mdcompress will try to infer desc from the trajectory file
-* `--topology <file_name>`       &ndash; file name of topology, this will be stored in the compressed output file, if -d was not provided mdcompress will try (but this may fail) to use --topology to infer desc
-* `--only-mol`                   &ndash; use this if your trajectory file contains only molecules and desc (-d) or topology (--topology) contains also other segments (water, 'other')
+* `-i <file_name>`               &ndash; input trajectory (XTC, TRR, DCD, and other chemfiles-supported formats)
+* `-o <file_name>`               &ndash; output file name (`.mdc`)
+* `-d <file_name>`               &ndash; description of the segments of a frame. May be omitted if `--topology` is given, in which case mdcompress builds the description from the topology automatically.
+* `--topology <file_name>`       &ndash; topology file (TPR, PSF, PDB, ...). It is stored inside the `.mdc`. If `-d` is not given, mdcompress infers the description from it. Note: coordinate-only trajectories (e.g. DCD) carry no topology, so either `-d` or `--topology` must be provided for them.
+* `--only-mol`                   &ndash; compress only the molecule segments, skipping water/ions/other from the description/topology. Usually not needed: if the trajectory contains only molecules, mdcompress detects this and enables `--only-mol` automatically (with a warning).
+* _description check_            &ndash; whether `-d` or `--topology` is used, the description is validated against the trajectory's atom count before compressing: an exact match is used as-is; if only the molecules match, `--only-mol` is enabled automatically; if nothing matches, compression is aborted with an explanation and (when the description was inferred from a topology) a candidate is written to `<output>.candidate.desc` for you to edit and reuse with `-d`.
 * `-l <int>`                     &ndash; compression level
 * `--preset <preset>`            &ndash; use one of preset parameters for `-b`, `--subsegment-size`,
 available presets:
@@ -75,20 +76,20 @@ available presets:
 * `-b|--batch-size <int>`        &ndash; no. of frames in a batch (default: 20)
 * `-h|--max-history-size <int>`  &ndash; no. of previous framed used to predict the current one (default: 1; max: 3)
 * `--n-frames-for-model`         &ndash; no. of frames to build model (default: 50)
-* `--res <int>`                  &ndash; min. resolution in fm (default: 1000)
+* `--res <int>`                  &ndash; min. resolution in fm (default: 1000; 1000 fm = 0.01 Angstrom)
 * `--max-dist-in-model`          &ndash; max. distance in segment of reference atoms (default: 100)
 * `--subsegment <id1,id2,...>`   &ndash; list of segments to split into subsegments (if no specified subsegment all except water)
 * `--subsegment-size <int>`      &ndash; number of atoms in a single subsegment (default: 100, 0 means don't use subsegments)
 
 Options - decompress mode
-* `-i <file_name>`               &ndash; input file name
-* `-o <file_name>`               &ndash; output file name
-* `--topology <file_name>`       &ndash; output file name of trajectory (extension must be the same as used during compression)
+* `-i <file_name>`               &ndash; input file name (`.mdc`)
+* `-o <file_name>`               &ndash; output trajectory file name (format chosen by extension: `.xtc`, `.trr`, `.dcd`, ...)
+* `--topology <file_name>`       &ndash; if a topology was stored at compression time, write it out to this path (the extension must match the original topology file)
 
 Options - select mode
-* `-i <file_name>`               &ndash; input file name
-* `-o <file_name>`               &ndash; output file name
-* `--topology <file_name>`       &ndash; file name of trajectory (extension must be the same as used during compression)
+* `-i <file_name>`               &ndash; input file name (`.mdc`)
+* `-o <file_name>`               &ndash; output trajectory file name (format chosen by extension: `.xtc`, `.trr`, `.dcd`, ...)
+* `--topology <file_name>`       &ndash; if a topology was stored at compression time, write it out to this path (the extension must match the original topology file)
 * `--fid <int>`                  &ndash; frame id (0-based)
 * `--fr <int> <int|MAX>`         &ndash; range of frame ids (0-based) (`MAX` or 2147483647 means last frame) 
 * `--stride <int>`               &ndash; stride size (for range of frames) (default: 1)
@@ -99,7 +100,7 @@ Options &ndash; info mode
 * `-i <file_name>`               &ndash; input file name
 
 Options &ndash; make_desc mode
-* `-i <file_name>`               &ndash; input file name (TPR, maybe other)
+* `-i <file_name>`               &ndash; input topology file (TPR, PSF, PDB, ...)
 * `-o <file_name>`               &ndash; output desc file name
 * `--only-mol`                   &ndash; include only molecule (skip water and 'other')
 
@@ -108,7 +109,18 @@ MDCompress needs to distinguish the segments of a frame (molecule, water, other)
 The most direct way to pass this info is to use `-d` parameter.
 This, however, is not very convenient, and MDCompress is able (in most cases) to infer the required information from the topology file (like TPR, PSF).
 In this case `--topology` parameter pointing to such a file should be used instead of `-d`.
-It happens that the topology file describes the full topology, but the XTC/TRR file contains only molecules; in such a case `--only-mol` flag should be added.
+
+In other words, you can hand MDCompress both the trajectory and the topology in a single call, and it will build the description, check that it makes sense, and use it:
+```
+bin/mdcompress compress -i trajectory.xtc --topology topology.tpr -o out.mdc
+```
+
+**Sanity check.** Whether the description comes from `-d` or is inferred from `--topology`, MDCompress validates it against the actual trajectory before compressing:
+* If the total number of atoms in the description matches the trajectory, it is used as-is.
+* If only the *molecule* atoms match the trajectory (a common case where the topology also describes water/ions that are not present in the trajectory), MDCompress prints a prominent warning and automatically enables `--only-mol`, compressing only the molecule segments.
+* If neither matches, MDCompress stops, prints the inferred segments and atom counts, and writes a best-effort candidate description to `<output>.candidate.desc` so you can edit it (segment types `MOL`/`WAT`/`OTHER`/`NONE`) and re-run with `-d`.
+
+It happens that the topology file describes the full topology, but the XTC/TRR file contains only molecules; in such a case `--only-mol` flag may be added explicitly (or left to the auto-detection described above).
 
 **Important note**: `--only-mol` is designed to inform MDCompress that XTC/TRR file contains only molecules, so it knows to skip other segments from the topology file.
 **It is not intended to make MDCompress skip non-molecules from XTC/TRR.** If this is needed, the description file with type `NONE` should be used (read below).
@@ -140,6 +152,21 @@ bin/mdcompress make_desc -i topology.tpr -o topology.desc
 ```
 and edit `topology.desc` as needed and pass it for compression with `-d` switch.
 
+
+## A note on DCD (and other topology-less formats)
+DCD trajectories store only coordinates (and the box) - they contain no topology, atom names, or bonds.
+Because of this, the description cannot be inferred from a DCD file itself; you must provide segment information either with `-d` (a description file) or with `--topology` pointing to a real topology file (e.g. PSF or PDB) that describes the same atoms.
+```
+# Using a description file
+bin/mdcompress compress -i trajectory.dcd -d topology.desc -o out.mdc
+
+# Or letting MDCompress infer (and validate) the description from a topology file
+bin/mdcompress compress -i trajectory.dcd --topology structure.psf -o out.mdc
+
+# Decompress back to DCD (or any other supported format)
+bin/mdcompress decompress -i out.mdc -o trajectory.dcd
+```
+DCD coordinates are stored as 32-bit floats in Angstroms. By default MDCompress uses a resolution of 0.01 A; use `--res` to change it if you need more (or less) precision.
 
 ## Tracking specific atoms
 It is possible to select only specific atoms using the `--atoms` switch. 

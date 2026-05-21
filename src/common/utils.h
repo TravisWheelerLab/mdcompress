@@ -60,7 +60,7 @@ T idiv(T x, T y)
 	return negative ? -r : r;
 }
 
-enum class traj_file_format_t {unknown, trr, xtc, tng, mdc, nc, gro};
+enum class traj_file_format_t {unknown, trr, xtc, tng, mdc, nc, gro, dcd};
 
 constexpr traj_file_format_t get_traj_format(const std::string& fn, bool for_output)
 {
@@ -87,7 +87,9 @@ constexpr traj_file_format_t get_traj_format(const std::string& fn, bool for_out
 		return traj_file_format_t::mdc;
 	if (ext == "gro" || ext == "GRO")
 		return traj_file_format_t::gro;
-	
+	if (ext == "dcd" || ext == "DCD")
+		return traj_file_format_t::dcd;
+
 	if(for_output)
 		return traj_file_format_t::unknown;
 
