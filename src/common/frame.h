@@ -64,7 +64,12 @@ inline bool operator<(const coord_t<T>& a, const coord_t<T>& b)
 // *******************************************************************************
 inline uint64_t dist2_3d(const icoord_t& a, const icoord_t& b)
 {
-	return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z);
+	// Square in 64-bit: at fine resolution (small --res) the int32 coordinate
+	// differences can exceed ~46340, whose square overflows a 32-bit int.
+	const int64_t dx = (int64_t)a.x - b.x;
+	const int64_t dy = (int64_t)a.y - b.y;
+	const int64_t dz = (int64_t)a.z - b.z;
+	return (uint64_t)(dx * dx + dy * dy + dz * dz);
 }
 
 // *******************************************************************************

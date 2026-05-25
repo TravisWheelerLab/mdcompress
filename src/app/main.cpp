@@ -58,18 +58,34 @@ void usage(int argc, char** argv)
     std::cerr << "Usage:\n";
     std::cerr << "mdcompress <mode> [options]\n";
     std::cerr << "Modes:\n";
-    std::cerr << "  compress    - compress XTC/TRR/... file into MDC format\n";
-    std::cerr << "  decompress  - decompress MDC file into XTC/TRR/... format\n";
-    std::cerr << "  select      - decompress some frames from MDC file into XTC/TRR/... format\n";
+    std::cerr << "  compress    - compress a trajectory (XTC/TRR/DCD/... any chemfiles-supported format) into MDC format\n";
+    std::cerr << "  decompress  - decompress MDC file into a trajectory (XTC/TRR/DCD/...)\n";
+    std::cerr << "  select      - decompress some frames from MDC file into a trajectory (XTC/TRR/DCD/...)\n";
     std::cerr << "  info        - info about contents of MDC file\n";
-    std::cerr << "  make_desc   - create description file (for -d) from TPR (and possibly other)\n";
+    std::cerr << "  make_desc   - create description file (for -d) from a topology (TPR/PSF/PDB/...)\n";
 
 	std::cerr << "Options - compress mode\n";
-    std::cerr << "  -i <file_name>               - input file name\n";
-    std::cerr << "  -o <file_name>               - output file name\n";
-    std::cerr << "  -d <file_name>               - file name of description of components of frame (may be omited if --topology provided -> mdcompress will try to infer desc from the trajectory file\n";
-    std::cerr << "  --topology <file_name>       - file name of topology, this will be stored in the compressed output file, if -d was not provided mdcompress will try (but this may fail) to use --topology to infer desc\n";
-    std::cerr << "  --only-mol                   - use this if your trajectory file contains only molecules and desc (-d) or topology (--topology) contains also other segments (water, 'other')\n";
+    std::cerr << "  -i <file_name>               - input trajectory (XTC, TRR, DCD, and other chemfiles-supported formats)\n";
+    std::cerr << "  -o <file_name>               - output file name (.mdc)\n";
+    std::cerr << "  -d <file_name>               - description of the segments of a frame.\n"
+                 "                                 May be omitted if --topology is given: mdcompress then\n"
+                 "                                 builds the description from the topology automatically.\n";
+    std::cerr << "  --topology <file_name>       - topology file (TPR, PSF, PDB, ...). It is stored inside the .mdc.\n"
+                 "                                 If -d is not given, mdcompress infers the description from it.\n"
+                 "                                 NOTE: coordinate-only trajectories (e.g. DCD) carry no topology,\n"
+                 "                                 so either -d or --topology must be provided for them.\n";
+    std::cerr << "  --only-mol                   - compress only the molecule segments, skipping water/ions/other\n"
+                 "                                 from the description/topology. Usually not needed: if the\n"
+                 "                                 trajectory contains only molecules, mdcompress detects this and\n"
+                 "                                 enables --only-mol automatically (with a warning).\n";
+    std::cerr << "  (description check)          - whether -d or --topology is used, the description is validated\n"
+                 "                                 against the trajectory's atom count before compressing:\n"
+                 "                                   * exact match            -> used as-is;\n"
+                 "                                   * only molecules match   -> --only-mol enabled automatically;\n"
+                 "                                   * no match               -> compression is aborted with an\n"
+                 "                                     explanation, and (when the description was inferred from a\n"
+                 "                                     topology) a candidate is written to <output>.candidate.desc\n"
+                 "                                     for you to edit and reuse with -d.\n";
     std::cerr << "  -l <int>                     - compression level (default: " << defaults.compression_level() << ")\n";
     std::cerr << "  --preset <preset>            - use one of preset parameters for -b, --subsegment-size,\n"
 				 "                                 available presets:\n"
@@ -83,7 +99,7 @@ void usage(int argc, char** argv)
     //std::cerr << "  -a|--anchor-separation <int> - no. of frames between anchors (default: " << defaults.preset_values.anchor_separation() << ")\n"; 2025-04-02 -> changing this in parameters to batch size which is -a value + 1
     std::cerr << "  -b|--batch-size <int>        - no. of frames in a batch (default: " << defaults.preset_values.anchor_separation() + 1 << ")\n";
     std::cerr << "  -h|--max-history-size <int>  - no. of previous framed used to predict the current one (default: " << defaults.max_history_size() << "; max: " << defaults.max_history_size.max_val() << ")\n";
-    std::cerr << "  --res <int>                  - min. resolution in fm (default: " << defaults.resolution() << ")\n";
+    std::cerr << "  --res <int>                  - min. resolution in fm (default: " << defaults.resolution() << "; 1000 fm = 0.01 Angstrom)\n";
 
     std::cerr << "  --subsegment <id1,id2,...>   - list of segments to split into subsegments (if no specified subsegment all)\n";
     std::cerr << "  --subsegment-size <int>      - number of atoms in a single subsegment (default: " << defaults.preset_values.subsegment_size() << ", 0 means don't use subsegments)\n";
@@ -92,14 +108,16 @@ void usage(int argc, char** argv)
     std::cerr << "  --max-dist-in-model          - max. distance in segment of reference atoms (default: " << defaults.max_dist_in_model() << ")\n";
 
     std::cerr << "Options - decompress mode\n";
-    std::cerr << "  -i <file_name>               - input file name\n";
-    std::cerr << "  -o <file_name>               - output file name\n";
-    std::cerr << "  --topology <file_name>       - output file name of trajectory (extension must be the same as used during compression)\n";
+    std::cerr << "  -i <file_name>               - input file name (.mdc)\n";
+    std::cerr << "  -o <file_name>               - output trajectory file name (format chosen by extension: .xtc/.trr/.dcd/...)\n";
+    std::cerr << "  --topology <file_name>       - if a topology was stored at compression time, write it out to\n"
+                 "                                 this path (the extension must match the original topology file)\n";
 
     std::cerr << "Options - select mode\n";
-    std::cerr << "  -i <file_name>               - input file name\n";
-    std::cerr << "  -o <file_name>               - output file name\n";
-    std::cerr << "  --topology <file_name>       - output file name of trajectory (extension must be the same as used during compression)\n";
+    std::cerr << "  -i <file_name>               - input file name (.mdc)\n";
+    std::cerr << "  -o <file_name>               - output trajectory file name (format chosen by extension: .xtc/.trr/.dcd/...)\n";
+    std::cerr << "  --topology <file_name>       - if a topology was stored at compression time, write it out to\n"
+                 "                                 this path (the extension must match the original topology file)\n";
     std::cerr << "  --fid <int>                  - frame id (0-based)\n";
     std::cerr << "  --fr <int> <int|MAX>         - range of frame ids (0-based) (`MAX` or " << std::numeric_limits<int>::max() << " means last frame) \n";
     std::cerr << "  --stride <int>               - stride size (for range of frames) (default: " << defaults.stride() << ")\n";
@@ -107,11 +125,11 @@ void usage(int argc, char** argv)
     std::cerr << "  --atoms <id1,id2,...>        - list of atoms to tracks, `id<n>` may be single id or closed interval in format start-end\n";
 
     std::cerr << "Options - info mode\n";
-    std::cerr << "  -i <file_name>               - input file name\n";
+    std::cerr << "  -i <file_name>               - input file name (.mdc)\n";
     std::cerr << "  --full                       - print full info (include subsegments)\n";
 
     std::cerr << "Options - make_desc mode\n";
-    std::cerr << "  -i <file_name>               - input file name (TPR, maybe other)\n";
+    std::cerr << "  -i <file_name>               - input topology file (TPR, PSF, PDB, ...)\n";
     std::cerr << "  -o <file_name>               - output desc file name\n";
     std::cerr << "  --only-mol                   - include only molecule (skip water and 'other')\n";
 
