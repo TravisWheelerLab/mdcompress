@@ -321,10 +321,40 @@ namespace mdc
 				return;
 			}
 
-			if (!file_version.is_supported())
+			if (!file_version.is_supported(current_error_message))
 			{
-				current_error_message = "mdc file format is newer than this software - please upade software";
 				return;
+				//mkokot_TODO: finish this
+				//if the file_version major is 1 just inform about known bug
+				//in the opposite case leave the code place to updata in the future
+				//as for now its only possible here to have file version 1.x or 2.x
+				//only new format will allow us to extend here
+				//if we detect too new version lets just informt to update
+
+				if (file_version.format_major > mdc_file_version::MAX_SUPPORTED_FORMAT_MAJOR)
+				{
+					current_error_message = "mdc file format is newer than this software - please upade software";
+					return;
+				}
+				else
+				{
+					assert(file_version.format_major < mdc_file_version::MIN_SUPPORTED_FORMAT_MAJOR); // this should be a case because this is what we expect is_supported to check
+				}
+
+				if (file_version.format_major < mdc_file_version::MIN_SUPPORTED_FORMAT_MAJOR)
+					current_error_message = "mdc file format (version " + file_version.as_string() +
+					") is incompatible with this software version. " +
+					(file_version.format_major == 1
+						? "This file was produced with a version containing a known bug in distance computation. "
+						"Please recompress from the original trajectory."
+						: "Please update MDCompress.");
+				else
+					current_error_message = "mdc file format (version " + file_version.as_string() +
+					") is incompatible with this software version. "
+					"Please update MDCompress.";
+				return;
+				//current_error_message = "mdc file format (version " + file_version.as_string() + ") is incompatible with used software version";
+				//return;
 			}
 
 			int id = ar_in.get_stream_id("segment-desc");
